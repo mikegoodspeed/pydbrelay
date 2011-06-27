@@ -32,6 +32,7 @@ except ImportError: import json
 apilevel = '2.0'
 threadsafety = 1 # race conditions in Connection._params
 paramstyle = 'pyformat'
+version = 0.5
 
 class Error(exceptions.StandardError):
     pass
