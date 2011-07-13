@@ -139,21 +139,20 @@ class DBAPIDateTime(DBAPITypeObject):
 
     def to_object(self, item, type):
         if type == 'date':
-            (year, month, day) = re.split('[-]', item)
-            return datetime.date(int(year), int(month), int(day))
+            (yr, mo, day) = map(int, re.split('[-]', item))
+            return datetime.date(yr, mo, day)
         if type == 'time':
             raw = re.split('[:.]', item)
             raw.extend([u'0'] * (4 - len(raw)))
-            (hour, minute, second, micro) = raw
-            return datetime.time(int(hour), int(minute), int(second),
-                                 int(micro.ljust(6,'0')))
+            (hour, minute, second, micro) = map(int, raw)
+            micro = int(str(micro).ljust(6, '0'))
+            return datetime.time(hour, minute, second, micro)
         if type in DATETIME.values:
             raw = re.split('[- :.]', item)
             raw.extend([u'0'] * (7 - len(raw)))
-            (year, month, day, hour, minute, second, micro) = raw
-            return datetime.datetime(int(year), int(month), int(day),
-                                     int(hour), int(minute), int(second),
-                                     int(micro.ljust(6,'0')))
+            (yr, mo, day, hour, minute, second, micro) = map(int, raw)
+            micro = int(str(micro).ljust(6, '0'))
+            return datetime.datetime(yr, mo, day, hour, minute, second, micro)
         return item
 
 STRING = DBAPIString()
@@ -174,7 +173,7 @@ class Cursor(object):
     def _type_map(self, item, type):
         if item is None or type == 'null':
             return None
-        for dbapi_type in [STRING, BINARY, NUMBER, DATETIME, ROWID]:
+        for dbapi_type in [NUMBER, STRING, DATETIME, BINARY, ROWID]:
             if type == dbapi_type:
                 return dbapi_type.to_object(item, type)
         return item
