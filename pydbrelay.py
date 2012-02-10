@@ -1,4 +1,4 @@
-#!/usr/local/bin/python -tt
+#!/usr/bin/env python
 """Python module to connect to databases using dbrelay.
    Copyright (C) 2011  Mike Goodspeed
 
@@ -32,7 +32,7 @@ except ImportError: import json
 apilevel = '2.0'
 threadsafety = 1 # race conditions in Connection._params
 paramstyle = 'pyformat'
-version = 0.5
+version = '0.7.0'
 
 class Error(exceptions.StandardError):
     pass
@@ -161,6 +161,64 @@ NUMBER = DBAPINumber()
 DATETIME = DBAPIDateTime()
 ROWID = DBAPITypeObject()
 
+class DBRelayData(object):
+
+    def __init__(self, data):
+        if not data:
+            raise ValueError("No data!")
+        self._json = data
+
+    @property
+    def error(self):
+        log = self._json['log']
+        return log['error'] if log and 'error' in log else None
+
+    @property
+    def data(self):
+        return self._json['data'] if 'data' in self._json else None
+
+    def get_fields(self, idx):
+        if self.data and 0 <= idx and idx < len(self.data):
+            return self.data[idx]['fields']
+        return None
+
+    def get_sql_types(self, idx):
+        fields = self.get_fields(idx)
+        return [field['sql_type'] for field in fields] if fields else []
+
+    def get_names(self, idx):
+        fields = self.get_fields(idx)
+        return [field['name'] for field in fields] if fields else[]
+
+    def get_precisions(self, idx):
+        fields = self.get_fields(idx)
+        result = []
+        for field in fields:
+            if 'precision' in field:
+                result.append(field['precision'])
+            else:
+                result.append(None)
+        return result
+
+    def get_scales(self, idx):
+        fields = self.get_fields(idx)
+        result = []
+        for field in fields:
+            if 'scale' in field:
+                result.append(field['scale'])
+            else:
+                result.append(None)
+        return result
+
+    def get_blanks(self, idx):
+        fields = self.get_fields(idx)
+        return [None for field in fields] if fields else []
+
+    def get_rows(self, idx):
+        if self.data and 0 <= idx and idx < len(self.data):
+            return self.data[idx]['rows']
+        return None
+
 class Cursor(object):
 
     def __init__(self, connection):
@@ -169,14 +227,17 @@ class Cursor(object):
         self.rowcount = -1
         self.arraysize = 1
         self._open = True
+        self._data = None
+        self._set_idx = -1
+        self._row_idx = -1
 
-    def _type_map(self, item, type):
-        if item is None or type == 'null':
+    def _type_map(self, element, sql_type):
+        if element is None or sql_type == 'null':
             return None
         for dbapi_type in [NUMBER, STRING, DATETIME, BINARY, ROWID]:
-            if type == dbapi_type:
-                return dbapi_type.to_object(item, type)
-        return item
+            if sql_type == dbapi_type:
+                return dbapi_type.to_object(element, sql_type)
+        return element
 
     def close(self):
         self._open = False
@@ -187,35 +248,28 @@ class Cursor(object):
     def __del__(self):
         self.close()
 
-    def _set_description(self):
-        fields = self._data[self._resultIndex]['fields']
-        self._types = [field['sql_type'] for field in fields]
-        names = [field['name'] for field in fields]
-        type_codes = [field['sql_type'] for field in fields]
-        display_sizes = [None for field in fields]
-        internal_sizes = [None for field in fields]
-        precisions = [field['precision'] if 'precision' in field else None
-                      for field in fields]
-        scales = [field['scale'] if 'scale' in field else None
-                  for field in fields]
+    def _set_description(self, idx):
+        data = self._data
+        names = data.get_names(idx)
+        type_codes = data.get_blanks(idx) # fix me
+        display_sizes = data.get_blanks(idx)
+        internal_size = data.get_blanks(idx)
+        precisions = data.get_precisions(idx)
+        scales = data.get_scales(idx)
         self.description = zip(names, type_codes, display_sizes,
-                               internal_sizes, precisions, scales)
+                               internal_size, precisions, scales)
 
     def execute(self, operation, parameters=None):
         self._assertOpen()
         params = self.conn.params
         params['sql'] = '-- %s\n%s' % (params['connection_name'], operation)
         data = urllib.urlencode(params)
-        result = json.load(urllib2.urlopen(self.conn.url, data=data))
-        self._index = 0
-        self._resultIndex = 0
-        self._data = []
-        if 'data' in result and len(result['data']) > 0:
-            self._data = result['data']
-            self._set_description()
-            self._types = [desc[1] for desc in self.description]
-        elif 'log' in result and 'error' in result['log']:
-            raise DatabaseError(result['log']['error'])
+        results = json.load(urllib2.urlopen(self.conn.url, data=data))
+        self._data = DBRelayData(results)
+        if self._data.error:
+            raise DatabaseError(self._data.error)
+        self._set_idx = -1
+        self.nextset()
 
     def executemany(self, operation, seq_of_parameters):
         self._assertOpen()
@@ -224,29 +278,56 @@ class Cursor(object):
 
     def fetchone(self):
         self._assertOpen()
-        if len(self._data) == 0 or self._data[self._resultIndex]['rows'] == 0:
+        if not self._data:
+            raise Error("No result set.")
+        data = self._data.data
+        if not data or len(data) == 0:
             raise Error("Empty result set.")
-        if self._index >= len(self._data[self._resultIndex]['rows']):
+        if self._set_idx >= len(data):
             return None
-        row = self._data[self._resultIndex]['rows'][self._index]
-        col_types = [row[d[0]] for d in self.description]
-        row = map(self._type_map, col_types, self._types)
-        self._index += 1
+        rows = self._data.get_rows(self._set_idx)
+        if self._row_idx >= len(rows):
+            return None
+        row = rows[self._row_idx]
+        cols = self._data.get_names(self._set_idx)
+        elements = [row[col] for col in cols]
+        sql_types = self._data.get_sql_types(self._set_idx)
+        row = map(self._type_map, elements, sql_types)
+        self._row_idx += 1
         return row
 
     def fetchmany(self, size=None):
         self._assertOpen()
         if size is None:
             size = self.arraysize
-        pass # todo ... not used in getcodb
+        result = []
+        for i in xrange(size):
+            row = self.fetchone()
+            if not row:
+                break
+            result.append(self.fetchone())
+        return result
 
     def fetchall(self):
         self._assertOpen()
-        pass # todo ... not used in getcodb
+        result = []
+        row = self.fetchone()
+        while row:
+            result.append(row)
+            row = self.fetchone()
+        return result
 
     def nextset(self):
         self._assertOpen()
-        pass # possible todo ... optional
+        if not self._data:
+            return None
+        data = self._data.data
+        if not data or self._set_idx >= len(data) - 1:
+            return None
+        self._set_idx += 1
+        self._row_idx = 0
+        self._set_description(self._set_idx)
+        return True
 
     def setinputsizes(self):
         self._assertOpen()
