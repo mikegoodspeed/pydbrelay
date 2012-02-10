@@ -251,7 +251,7 @@ class Cursor(object):
     def _set_description(self, idx):
         data = self._data
         names = data.get_names(idx)
-        type_codes = data.get_blanks(idx) # fix me
+        type_codes = data.get_blanks(idx)
         display_sizes = data.get_blanks(idx)
         internal_size = data.get_blanks(idx)
         precisions = data.get_precisions(idx)
