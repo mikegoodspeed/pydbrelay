@@ -8,7 +8,7 @@ Compliant with [Python Database API Specification v2.0](http://www.python.org/de
 License
 -------
 
-Copyright (C) 2011  Mike Goodspeed
+Copyright (C) 2012  Mike Goodspeed
 
 This program is free software: you can redistribute it and/or modify it
 under the terms of the GNU General Public License as published by the Free
