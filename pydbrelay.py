@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """Python module to connect to databases using dbrelay.
-   Copyright (C) 2011  Mike Goodspeed
+   Copyright (C) 2012 Mike Goodspeed
 
    This program is free software: you can redistribute it and/or modify it
    under the terms of the GNU General Public License as published by the Free
@@ -251,7 +251,7 @@ class Cursor(object):
     def _set_description(self, idx):
         data = self._data
         names = data.get_names(idx)
-        type_codes = data.get_blanks(idx) # fix me
+        type_codes = data.get_blanks(idx)
         display_sizes = data.get_blanks(idx)
         internal_size = data.get_blanks(idx)
         precisions = data.get_precisions(idx)
