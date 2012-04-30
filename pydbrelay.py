@@ -32,7 +32,7 @@ except ImportError: import json
 apilevel = '2.0'
 threadsafety = 1 # race conditions in Connection._params
 paramstyle = 'pyformat'
-version = '0.7.0'
+version = '0.7.1'
 
 class Error(exceptions.StandardError):
     pass
@@ -327,6 +327,8 @@ class Cursor(object):
         self._set_idx += 1
         self._row_idx = 0
         self._set_description(self._set_idx)
+        if not self.description:
+            return self.nextset()
         return True
 
     def setinputsizes(self):
